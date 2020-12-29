@@ -29,7 +29,8 @@ function POMDPs.solve(sol::CWorldSolver, w::CWorld)
         for i in 1:length(sol.grid)
             s = Vec2(ind2x(sol.grid, i))
             if isterminal(w, s)
-                newdata[i] = 0.0
+                a = actions(w,s)[1] #dummy
+                newdata[i] = reward(w, s, a) 
             else
                 best_Qsum = -Inf
                 for a in actions(w, s)
@@ -58,7 +59,7 @@ function POMDPs.solve(sol::CWorldSolver, w::CWorld)
         for i in 1:length(sol.grid)
             s = Vec2(ind2x(sol.grid, i))
             if isterminal(w, s)
-                qdata[i] = 0.0
+                qdata[i] = reward(w, s, a)
             else
                 Qsum = 0.0
                 for k in 1:sol.m

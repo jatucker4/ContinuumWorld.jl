@@ -61,10 +61,10 @@ function POMDPs.gen(w::CWorld, s::AbstractVector, a::AbstractVector, rng::Abstra
     return (sp=sp,)
 end
 
-function POMDPs.reward(w::CWorld, s::AbstractVector, a::AbstractVector, sp::AbstractVector) # XXX inefficient
+function POMDPs.reward(w::CWorld, s::AbstractVector, a::AbstractVector) # XXX inefficient
     rew = 0.0
     for (i,r) in enumerate(w.reward_regions)
-        if sp in r
+        if s in r
             rew += w.rewards[i]
         end
     end
