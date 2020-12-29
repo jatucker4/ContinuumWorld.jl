@@ -7,16 +7,21 @@ evaluate(v::GIValue, s::AbstractVector{Float64}) = interpolate(v.grid, v.gdata, 
 
 @with_kw mutable struct CWorldSolver{G<:AbstractGrid, RNG<:AbstractRNG} <: Solver
     grid::G                     = RectangleGrid(range(0.0, stop=10.0, length=30), range(0.0, stop=10.0, length=30))
+    n_actions_solve::Int              = 10 #number of actions to sample for solving
+    n_actions_eval::Int              = 10 #number of actions to sample for policy evaluation
     max_iters::Int              = 50
     tol::Float64                = 0.01
-    m::Int                      = 20
+    n_transitions::Int          = 20    #number of transitions to sample and average over
     value_hist::AbstractVector  = []
     rng::RNG                    = Random.GLOBAL_RNG
 end
 
-struct CWorldPolicy{V} <: Policy
-    actions::Vector{Vec2}
-    Qs::Vector{V}
+struct CWorldPolicy{RNG<:AbstractRNG} <: Policy
+    w::CWorld #need for transition call
+    rng::RNG #for the transition call
+    n_actions::Int  #number of actions to sample
+    n_transitions::Int  #number of transitions to sample and average over 
+    V::GIValue #value function
 end
 
 function POMDPs.solve(sol::CWorldSolver, w::CWorld)
@@ -25,23 +30,23 @@ function POMDPs.solve(sol::CWorldSolver, w::CWorld)
     val = GIValue(sol.grid, data)
 
     for k in 1:sol.max_iters
-        newdata = similar(data)
+        newdata = similar(data)  #for keeping history, results in a lot of allocations
         for i in 1:length(sol.grid)
             s = Vec2(ind2x(sol.grid, i))
             if isterminal(w, s)
-                a = actions(w,s)[1] #dummy
-                newdata[i] = reward(w, s, a) 
+                dummy_a = Vec2(0.0,0.0) 
+                newdata[i] = reward(w, s, dummy_a) 
             else
                 best_Qsum = -Inf
-                for a in actions(w, s)
+                for a in rand(sol.rng, actions(w,s), sol.n_actions_solve)
                     Qsum = 0.0
-                    for j in 1:sol.m
+                    for j in 1:sol.n_transitions 
                         sp, r = @gen(:sp, :r)(w, s, a, sol.rng)
                         Qsum += r + discount(w)*evaluate(val, sp)
                     end
                     best_Qsum = max(best_Qsum, Qsum)
                 end
-                newdata[i] = best_Qsum/sol.m
+                newdata[i] = best_Qsum/sol.n_transitions
             end
         end
         push!(sol.value_hist, val)
@@ -49,38 +54,25 @@ function POMDPs.solve(sol::CWorldSolver, w::CWorld)
         val = GIValue(sol.grid, newdata)
     end
 
-    print("\nextracting policy...     ")
-
-    acts = collect(actions(w))
-    Qs = Vector{GIValue}(undef,length(acts))
-    for j in 1:length(acts)
-        a = acts[j]
-        qdata = similar(val.gdata)
-        for i in 1:length(sol.grid)
-            s = Vec2(ind2x(sol.grid, i))
-            if isterminal(w, s)
-                qdata[i] = reward(w, s, a)
-            else
-                Qsum = 0.0
-                for k in 1:sol.m
-                    sp, r = @gen(:sp, :r)(w, s, a, sol.rng)
-                    Qsum += r + discount(w)*evaluate(val, sp)
-                end
-                qdata[i] = Qsum/sol.m
-            end
-        end
-        Qs[j] = GIValue(sol.grid, qdata)
-    end
-    println("done.")
-
-    return CWorldPolicy(acts, Qs)
+    return CWorldPolicy(w, sol.rng, sol.n_actions_eval, sol.n_transitions, val)
 end
 
 function POMDPs.action(p::CWorldPolicy, s::AbstractVector{Float64})
-    best = action_ind(p, s)
-    return p.actions[best]
+    best_Qsum = -Inf
+    best_index = 0
+    acts = rand(p.rng, actions(p.w,s), p.n_actions)
+    for (i,a) in enumerate(acts)
+        Qsum = 0.0
+        for k in 1:p.n_transitions
+            sp, r = @gen(:sp, :r)(p.w, s, a, p.rng)
+            Qsum += r + discount(p.w)*evaluate(p.V, sp)
+        end
+        if Qsum > best_Qsum
+            best_Qsum = Qsum
+            best_index = i
+        end
+    end
+    acts[best_index]
 end
 
-action_ind(p::CWorldPolicy, s::AbstractVector{Float64}) = argmax([evaluate(Q, s) for Q in p.Qs])
-
-POMDPs.value(p::CWorldPolicy, s::AbstractVector{Float64}) = maximum([evaluate(Q, s) for Q in p.Qs])
+POMDPs.value(p::CWorldPolicy, s::AbstractVector{Float64}) = evaluate(p.V, s) 

@@ -34,13 +34,21 @@ end
 
 Base.in(v::Vec2, r::CircularRegion) = LinearAlgebra.norm(v-r.center) <= r.radius
 
-const card_and_stay = [Vec2(1.0, 0.0), Vec2(-1.0, 0.0), Vec2(0.0, 1.0), Vec2(0.0, -1.0), Vec2(0.0, 0.0)]
-const cardinal = [Vec2(1.0, 0.0), Vec2(-1.0, 0.0), Vec2(0.0, 1.0), Vec2(0.0, -1.0)]
 const default_regions = [CircularRegion(Vec2(3.5, 2.5), 0.5),
                          CircularRegion(Vec2(3.5, 5.5), 0.5),
                          CircularRegion(Vec2(8.5, 2.5), 0.5),
                          CircularRegion(Vec2(7.5, 7.5), 0.5)]
 const default_rewards = [-10.0, -5.0, 10.0, 3.0]
+
+#action is Vec2(magnitude, angle_deg)
+@with_kw struct CircularActionSpace
+    r_max::Float64 = 1.0
+end
+function Base.rand(rng::AbstractRNG, d::Random.SamplerTrivial{CircularActionSpace})
+    r = d[].r_max * rand(rng) 
+    θ = 360.0 * rand(rng) 
+    Vec2(r, θ)
+end
 
 @with_kw struct CWorld <: MDP{Vec2, Vec2}
     xlim::Tuple{Float64, Float64}                   = (0.0, 10.0)
@@ -49,7 +57,7 @@ const default_rewards = [-10.0, -5.0, 10.0, 3.0]
     rewards::Vector{Float64}                        = default_rewards
     terminal::Vector{CircularRegion}                = default_regions
     stdev::Float64                                  = 0.5
-    actions::Vector{Vec2}                           = cardinal
+    actions::CircularActionSpace                    = CircularActionSpace()
     discount::Float64                               = 0.95
 end
 
@@ -57,7 +65,9 @@ POMDPs.actions(w::CWorld) = w.actions
 POMDPs.discount(w::CWorld) = w.discount
 
 function POMDPs.gen(w::CWorld, s::AbstractVector, a::AbstractVector, rng::AbstractRNG)
-    sp = s + a + w.stdev*randn(rng, Vec2)
+    r,θ = a
+    delta = r .* Vec2(cosd(θ), sind(θ))
+    sp = s + delta + w.stdev*randn(rng, Vec2)
     return (sp=sp,)
 end
 
