@@ -22,8 +22,7 @@ export
     Vec2,
     CWorldSolver,
     
-    evaluate,
-    action_ind
+    evaluate
 
 const Vec2 = SVector{2, Float64}
 
