@@ -3,6 +3,7 @@ mutable struct CWorldVis
     s::Union{Vec2, Nothing}
     f::Union{Function, Nothing}
     g::Union{AbstractGrid, Nothing}
+    fq::Union{Function, Nothing}
     title::Union{String, Nothing}
 end
 
@@ -10,8 +11,9 @@ function CWorldVis(w::CWorld;
                    s=nothing,
                    f=nothing,
                    g=nothing,
+                   fq=nothing,
                    title=nothing)
-    return CWorldVis(w, s, f, g, title)
+    return CWorldVis(w, s, f, g, fq, title)
 end
 
 @recipe function f(v::CWorldVis)
@@ -52,7 +54,29 @@ end
             xs, ys
         end
     end
+    if v.fq !== nothing
+        @series begin
+            f = v.fq
+            width = v.w.xlim[2]-v.w.xlim[1]
+            height = v.w.ylim[2]-v.w.ylim[1]
+            n = 25 # number of pixels/steps
+            nx = round(Int, sqrt(n^2*width/height))
+            ny = round(Int, sqrt(n^2*height/width))
+            xs, ys = meshgrid(range(v.w.xlim[1], stop=v.w.xlim[2], length=nx), range(v.w.ylim[1], stop=v.w.ylim[2], length=ny))
+            xs, ys = vec(xs), vec(ys)
+            us, vs = similar(xs), similar(ys)
+            for i = 1:length(xs)
+                us[i], vs[i] = f(Vec2(xs[i], ys[i]))
+            end
+            seriestype := :quiver
+            quiver := (us,vs)
+            xs, ys
+        end
+    end
 end
+
+meshgrid(rgx, rgy) = ([x for x in rgx, y in rgy], [y for x in rgx, y in rgy])
 
 Base.show(io::IO, m::MIME, v::CWorldVis) = show(io, m, plot(v)) 
 Base.show(io::IO, m::MIME"text/plain", v::CWorldVis) = println(io, v)
+

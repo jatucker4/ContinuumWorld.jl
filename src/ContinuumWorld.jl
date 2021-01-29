@@ -19,6 +19,8 @@ export
     CWorld,
     CWorldVis,
     CircularRegion,
+    CWorldStateSpace,
+    CircularActionSpace,
     Vec2,
     CWorldSolver,
     
@@ -49,25 +51,59 @@ function Base.rand(rng::AbstractRNG, d::Random.SamplerTrivial{CircularActionSpac
     Vec2(r, θ)
 end
 
+#state is 2D: x, y position
+#action is 2D delta added to s: radius, angle (degrees, right zero, counterclock positive, +-180.0)
 @with_kw struct CWorld <: MDP{Vec2, Vec2}
-    xlim::Tuple{Float64, Float64}                   = (0.0, 10.0)
+    xlim::Tuple{Float64, Float64}                   = (0.0, 10.0) 
     ylim::Tuple{Float64, Float64}                   = (0.0, 10.0)
+    terminal_state::Vec2                            = Vec2(-1.0,-1.0)  #must be outside of xlim and ylim
     reward_regions::Vector{CircularRegion}          = default_regions
     rewards::Vector{Float64}                        = default_rewards
     terminal::Vector{CircularRegion}                = default_regions
-    stdev::Float64                                  = 0.5
+    stdev::Tuple{Float64,Float64}                   = (0.0, 0.0)
     actions::CircularActionSpace                    = CircularActionSpace()
     discount::Float64                               = 0.95
 end
 
+struct CWorldStateSpace 
+    xlim::Tuple{Float64, Float64}
+    ylim::Tuple{Float64, Float64}
+end
+POMDPs.states(w::CWorld) = CWorldStateSpace(w.xlim, w.ylim)
 POMDPs.actions(w::CWorld) = w.actions
 POMDPs.discount(w::CWorld) = w.discount
 
-function POMDPs.gen(w::CWorld, s::AbstractVector, a::AbstractVector, rng::AbstractRNG)
-    r,θ = a
-    delta = r .* Vec2(cosd(θ), sind(θ))
-    sp = s + delta + w.stdev*randn(rng, Vec2)
-    return (sp=sp,)
+function inbounds(xy::Vec2, xlim::Tuple{Float64,Float64}, ylim::Tuple{Float64,Float64})
+    (xlim[1] <= xy[1] <= xlim[2]) && (ylim[1] <= xy[2] <= ylim[2])
+end
+function Base.in(s::AbstractVector, terminal::Vector{CircularRegion})
+    for r in terminal
+        if s in r
+            return true 
+        end
+    end
+    false
+end
+
+function POMDPs.transition(w::CWorld, s::AbstractVector, a::AbstractVector)
+    ImplicitDistribution(w, s, a) do w, s, a, rng
+        #terminal states
+        (s in w.terminal) && return w.terminal_state
+
+        #r,θ = a
+        #delta = r .* Vec2(cosd(θ), sind(θ))
+        
+        #a = [dx,dy]
+        delta = Vec2(a[1],a[2])
+        sp = s .+ delta .+ w.stdev.*randn(rng, Vec2)
+
+        # also terminate if out-of-bounds 
+        if !inbounds(sp, w.xlim, w.ylim) 
+            sp = w.terminal_state 
+        end
+
+        sp 
+    end
 end
 
 function POMDPs.reward(w::CWorld, s::AbstractVector, a::AbstractVector) # XXX inefficient
@@ -80,13 +116,8 @@ function POMDPs.reward(w::CWorld, s::AbstractVector, a::AbstractVector) # XXX in
     return rew
 end
 
-function POMDPs.isterminal(w::CWorld, s::Vec2) # XXX inefficient
-    for r in w.terminal
-        if s in r
-            return true
-        end
-    end
-    return false
+function POMDPs.isterminal(w::CWorld, s::Vec2) 
+    s == w.terminal_state
 end
 
 struct Vec2Distribution
