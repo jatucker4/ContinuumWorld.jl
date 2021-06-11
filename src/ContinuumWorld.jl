@@ -12,6 +12,7 @@ using POMDPModels
 using Distributions
 using Statistics
 using StatsBase
+using RLInterface
 using Plots
 plotly()
 
